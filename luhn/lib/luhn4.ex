@@ -16,12 +16,18 @@ defmodule Luhn4 do
 
   def check(line) do
     # IO.puts(line)
+    # {:ok, file} = File.open("log2.txt", [:append])
+    # IO.binwrite(file, line)
+    # IO.binwrite(file, "\r")
+    # File.close(file)
 
     line_chars = to_charlist(line)
 
     result = luhn_check(line_chars, "", [])
 
-    if !String.ends_with?(result, "X\n"),
+    # if result == nil, do: IO.puts(line)
+
+    if !String.contains?(result, "X"),
       do: check(line_chars, ""),
       else: result
   end
@@ -29,7 +35,7 @@ defmodule Luhn4 do
   def check([line_head | line_tail], result) when line_tail != [] do
     check_result = luhn_check(line_tail, "", [])
 
-    if !String.ends_with?(check_result, "X\n"),
+    if !String.contains?(check_result, "X"),
       do: check(line_tail, result <> List.to_string([line_head])),
       else: result <> List.to_string([line_head]) <> check_result
   end
@@ -38,7 +44,7 @@ defmodule Luhn4 do
     result <> List.to_string([line_head])
   end
 
-  def luhn_check([text_to_check | tail], result, card) when is_binary(result) do
+  def luhn_check([text_to_check | tail], result, card, prev_card \\ []) when is_binary(result) do
     # return the entire string either with same card number or replaced with masked if a valid card number
     # IO.puts("luhncheck #{inspect(card)}")
     card_length = Enum.count(card, fn x -> x != 32 && x != 45 end) + 1
@@ -56,26 +62,47 @@ defmodule Luhn4 do
           String.reverse(List.to_string([text_to_check | card])),
           validate_and_mask([text_to_check | card], card_length)
         ),
-        []
+        [],
+        [text_to_check | card]
       )
     else
-      luhn_check(tail, result <> List.to_string([text_to_check]), [text_to_check | card])
+      luhn_check(
+        tail,
+        result <> List.to_string([text_to_check]),
+        [text_to_check | card],
+        prev_card
+      )
     end
 
     # end
   end
 
-  def luhn_check([], result, card) do
+  def luhn_check([], result, card, prev_card) do
+    # prev_card = to_charlist(prev_card)
+    # IO.puts(inspect(prev_card))
+    # IO.puts(inspect(card))
     # IO.puts("card #{String.reverse(to_string(card))}")
+    # IO.puts(result)
     card_without_n = Enum.reject(card, fn x -> x == 10 end)
-    # IO.puts(inspect(card_without_n))
-    card_in_right_order = String.reverse(to_string(card_without_n))
-    card_digits = to_charlist(card_in_right_order)
-    # IO.puts(inspect(card_digits))
 
-    if String.length(result) > 16 &&
-         Enum.count(card_digits, fn x -> x == 48 end) == Enum.count(card_digits) do
-      String.replace(result, card_in_right_order, mask(card_digits, []))
+    if String.length(result) > 16 && card_without_n != [] do
+      card_in_right_order = String.reverse(to_string(card_without_n))
+      overlap_digits = prev_card |> Enum.take(16 - length(card_without_n)) |> Enum.reverse()
+
+      card_digits = to_charlist(to_string([overlap_digits | card_in_right_order]))
+
+      mask = validate_and_mask(Enum.reverse(card_digits), length(card_digits))
+
+      if String.ends_with?(mask, "X") do
+        result =
+          String.replace(result, card_in_right_order, mask(to_charlist(card_in_right_order), []))
+
+        # IO.puts(String.length(result))
+        # IO.puts("result #{result}")
+        result
+      else
+        result
+      end
     else
       result
     end
