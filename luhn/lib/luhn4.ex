@@ -15,17 +15,9 @@ defmodule Luhn4 do
   end
 
   def check(line) do
-    # IO.puts(line)
-    # {:ok, file} = File.open("log2.txt", [:append])
-    # IO.binwrite(file, line)
-    # IO.binwrite(file, "\r")
-    # File.close(file)
-
     line_chars = to_charlist(line)
 
     result = luhn_check(line_chars, "", [])
-
-    # if result == nil, do: IO.puts(line)
 
     if !String.contains?(result, "X"),
       do: check(line_chars, ""),
@@ -44,61 +36,63 @@ defmodule Luhn4 do
     result <> List.to_string([line_head])
   end
 
-  def luhn_check([text_to_check | tail], result, card, prev_card \\ []) when is_binary(result) do
-    # return the entire string either with same card number or replaced with masked if a valid card number
-    # IO.puts("luhncheck #{inspect(card)}")
-    card_length = Enum.count(card, fn x -> x != 32 && x != 45 end) + 1
-    # IO.puts("result #{result}")
-    # IO.puts(inspect(tail))
+  def luhn_check([text_to_check | tail], result, card, prev_card \\ [], card_length \\ 1)
+      when is_binary(result) do
+    card = [text_to_check | card]
 
+    # return the entire string either with same card number or replaced with masked if a valid card number
     # validate each 16 length or 14 and 15 length string to check if its a valid card number
     # if its 16 length or  if its the last remaining 14 or 15 lenght card and it would never reach to 16
-    if card_length >= 16 ||
-         (card_length >= 14 && card_length < 16 && tail == []) do
-      luhn_check(
-        tail,
-        String.replace(
-          result <> List.to_string([text_to_check]),
-          String.reverse(List.to_string([text_to_check | card])),
-          validate_and_mask([text_to_check | card], card_length)
-        ),
-        [],
-        [text_to_check | card]
-      )
-    else
-      luhn_check(
-        tail,
-        result <> List.to_string([text_to_check]),
-        [text_to_check | card],
-        prev_card
-      )
-    end
 
-    # end
+    cond do
+      card_length >= 16 || (card_length >= 14 && card_length < 16 && tail == [10]) ->
+        luhn_check(
+          tail,
+          String.replace(
+            result <> List.to_string([text_to_check]),
+            String.reverse(List.to_string(card)),
+            validate_and_mask(card, card_length)
+          ),
+          [],
+          card
+        )
+
+      (text_to_check >= 48 && text_to_check <= 57) ||
+        text_to_check == 32 || text_to_check == 45 ->
+        card_length = Enum.count(card, fn x -> x != 32 && x != 45 end) + 1
+
+        luhn_check(
+          tail,
+          result <> List.to_string([text_to_check]),
+          card,
+          prev_card,
+          card_length
+        )
+
+      tail == [] && card_length > 1 ->
+        luhn_check(tail, result <> List.to_string([text_to_check]), card, prev_card)
+
+      true ->
+        # reset the card digits as soon as we hit a non integer
+        luhn_check(tail, result <> List.to_string([text_to_check]), [], prev_card)
+    end
   end
 
-  def luhn_check([], result, card, prev_card) do
-    # prev_card = to_charlist(prev_card)
-    # IO.puts(inspect(prev_card))
-    # IO.puts(inspect(card))
-    # IO.puts("card #{String.reverse(to_string(card))}")
-    # IO.puts(result)
+  def luhn_check([], result, card, prev_card, card_length) do
     card_without_n = Enum.reject(card, fn x -> x == 10 end)
 
     if String.length(result) > 16 && card_without_n != [] do
       card_in_right_order = String.reverse(to_string(card_without_n))
       overlap_digits = prev_card |> Enum.take(16 - length(card_without_n)) |> Enum.reverse()
 
-      card_digits = to_charlist(to_string([overlap_digits | card_in_right_order]))
+      card = to_charlist(to_string([overlap_digits | card_in_right_order]))
 
-      mask = validate_and_mask(Enum.reverse(card_digits), length(card_digits))
+      mask = validate_and_mask(Enum.reverse(card), length(card))
 
       if String.ends_with?(mask, "X") do
         result =
           String.replace(result, card_in_right_order, mask(to_charlist(card_in_right_order), []))
 
-        # IO.puts(String.length(result))
-        # IO.puts("result #{result}")
         result
       else
         result
@@ -108,96 +102,34 @@ defmodule Luhn4 do
     end
   end
 
-  defp validate_and_mask(card, card_length) do
-    # IO.puts(card)
-    masked = validate_and_mask(card, "", [], card_length)
-    # IO.puts("masked: #{masked}")
-    masked
+  defp validate_and_mask(card, card_length) when card_length >= 14 do
+    card_in_right_order = Enum.reverse(card)
+    [val, skip_digits] = validate(card_in_right_order, [], card_length)
+
+    if val, do: mask(card_in_right_order, skip_digits), else: String.reverse(List.to_string(card))
   end
 
-  # build the card_digits with integers and then validate
-  defp validate_and_mask([card_head | card_tail], result, card_digits, card_length) do
-    # if integer then add to card_digits
-    # IO.puts("validate_and_mask[card_head|card_tail] #{inspect(card_digits)}")
-
-    # IO.puts(card_length)
-
-    cond do
-      (card_head >= 48 && card_head <= 57) || card_head == 32 || card_head == 45 ->
-        card_length = Enum.count(card_digits, fn x -> x != 32 && x != 45 end) + 1
-
-        validate_and_mask(
-          card_tail,
-          result <> List.to_string([card_head]),
-          [card_head | card_digits],
-          card_length
-        )
-
-      # card_head == 32 || card_head == 45 ->
-      #   # continue to build card digits if we hit space or hyphen
-      #   validate_and_mask(tail, result <> List.to_string(card_head), card_digits)
-
-      # if we hit with a non integer at the end but we have enough digits to validate
-      card_length >= 14 ->
-        card_length = Enum.count(card_digits, fn x -> x != 32 && x != 45 end)
-
-        validate_and_mask(
-          card_tail,
-          result <> List.to_string([card_head]),
-          card_digits,
-          card_length
-        )
-
-      true ->
-        # reset the card digits as soon as we hit a non integer
-        validate_and_mask(card_tail, result <> List.to_string([card_head]), [], card_length)
-    end
+  defp validate_and_mask(card, card_length) when card_length < 14 do
+    String.reverse(List.to_string(card))
   end
 
-  defp validate_and_mask([], result, card_digits, card_length) when card_length >= 14 do
-    # IO.puts("validate_and_mask[] #{inspect(card_digits)}")
-    # Enum.reverse(card_digits)
-
-    card_digits_in_right_order = card_digits
-    [val, skip_digits] = validate(card_digits_in_right_order, [], card_length)
-
-    if val,
-      do:
-        String.replace(
-          String.reverse(result),
-          List.to_string(card_digits_in_right_order),
-          mask(card_digits_in_right_order, skip_digits)
-        ),
-      else: String.reverse(result)
-  end
-
-  defp validate_and_mask([], result, card_digits, card_length) when card_length < 14 do
-    # IO.puts("validatea_and_mask4")
-    String.reverse(result)
-  end
-
-  defp validate(card_digits, skipped_digits, card_length) when card_length < 14 do
-    # IO.puts("validate < 14")
+  defp validate(card, skipped_digits, card_length) when card_length < 14 do
     [false, []]
   end
 
   # validate the card number, at this point it only has integers >=14
-  defp validate(card_digits, skipped_digits, card_length) when card_length >= 14 do
-    # IO.puts(inspect(card_digits))
-
-    [val, _] = validate(card_digits, card_length)
-
-    # IO.puts(val)
+  defp validate(card, skipped_digits, card_length) when card_length >= 14 do
+    [val, _] = validate(card, card_length)
 
     if(val || card_length < 14) do
       [val, skipped_digits]
     else
-      [val, sd] = validate(tl(card_digits), [hd(card_digits) | skipped_digits], card_length - 1)
+      [val, sd] = validate(tl(card), [hd(card) | skipped_digits], card_length - 1)
 
       [val2, sd2] =
         validate(
-          Enum.slice(card_digits, 0, length(card_digits) - 1),
-          [-List.last(card_digits) | skipped_digits],
+          Enum.slice(card, 0, length(card) - 1),
+          [-List.last(card) | skipped_digits],
           card_length - 1
         )
 
@@ -209,11 +141,10 @@ defmodule Luhn4 do
     end
   end
 
-  defp validate(card_digits, card_length) when card_length >= 14 do
-    # IO.puts("validate #{inspect(card_digits)}")
+  defp validate(card, card_length) when card_length >= 14 do
     # skip the last digit
 
-    card_number = card_digits |> Enum.filter(&(&1 != 32 && &1 != 45))
+    card_number = card |> Enum.filter(&(&1 != 32 && &1 != 45))
 
     cond do
       length(card_number) > 16 ->
@@ -231,7 +162,6 @@ defmodule Luhn4 do
           |> Enum.flat_map(fn x -> String.split(to_string(x), "", trim: true) end)
           |> Enum.map(fn x -> String.to_integer(x) end)
 
-        # IO.puts("sum #{Enum.sum(every_second_double)}")
         [Integer.mod(Enum.sum(every_second_double), 10) == 0, []]
 
       true ->
@@ -246,13 +176,11 @@ defmodule Luhn4 do
           |> Enum.flat_map(fn x -> String.split(to_string(x), "", trim: true) end)
           |> Enum.map(fn x -> String.to_integer(x) end)
 
-        # IO.puts(inspect(every_second_double))
-
         [Integer.mod(Enum.sum(every_second_double), 10) == 0, []]
     end
   end
 
-  defp validate(card_digits, _card_length) do
+  defp validate(card, _card_length) do
     [false, []]
   end
 
@@ -264,10 +192,6 @@ defmodule Luhn4 do
   end
 
   defp mask(card_number, left_skip, right_skip) do
-    # IO.puts(right_skip)
-    # masked = String.split(card_number,"",trim: true)
-    #           |> Enum.drop(Enum.count(left_skip)) |> Enum.drop(-(Enum.count(right_skip)))
-    #           |> Enum.map_join(fn x-> if !Regex.match?(~r{ |-|\n|\\n}, x), do: "X", else: x end)
     masked =
       card_number
       |> Enum.drop(Enum.count(left_skip))
@@ -276,12 +200,9 @@ defmodule Luhn4 do
         if !Regex.match?(~r{ |-|\n}, to_string([x])), do: "X", else: List.to_string([x])
       end)
 
-    # left = left_skip |> Enum.reverse() |> Enum.join()
     left = left_skip |> Enum.reverse() |> List.to_string()
     right = right_skip |> Enum.map(fn x -> -x end) |> List.to_string()
 
-    masked = left <> masked <> right
-    # IO.puts(masked)
-    masked
+    left <> masked <> right
   end
 end
